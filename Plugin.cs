@@ -192,6 +192,7 @@ namespace ArenaHelper
 
         private Hashtable heartharenaheromapping = new Hashtable();
         private Hashtable heartharenamapping = new Hashtable();
+        private Hashtable heartharenacardidmapping = new Hashtable();
         private int hearthCallsMade = 0;
         private string heartharenaurl = "";
         private string heartharenamessage = "";
@@ -315,6 +316,7 @@ namespace ArenaHelper
             //AddElements();
             LoadCards();
             LoadHearthAreaCards();
+            populateIDToNameMapping();
         }
 
         private void AddMenuItem()
@@ -1054,7 +1056,7 @@ namespace ArenaHelper
 
         private void WaitCardPick(List<int> cardindices)
         {
-            testtext.Text += "\nheartharena url: " + heartharenaurl;
+            testtext.Text += "\nheartharena new url: " + heartharenaurl;
             testtext.Text += "\nheartharena calls made: " + hearthCallsMade.ToString();
             testtext.Text += "\nheartharena tip: " + heartharenamessage;
             // All cards detected, wait for new pick
@@ -1130,14 +1132,21 @@ namespace ArenaHelper
             }
         }
 
+        private void populateIDToNameMapping()
+        {
+            for (int i = 0; i < cardtierlist.Count; i++)
+            {
+                heartharenacardidmapping[cardtierlist[i].id] = heartharenamapping[cardtierlist[i].name.ToLower()];
+            }
+        }
+
         private string getHearthArenaUrl()
         {
             string heartharenapickedlist = "";
             string comma = "";
             foreach (var cardid in arenadata.pickedcards)
             {
-                CardTierInfo cardtierinfo = GetCardTierInfo(cardid);
-                heartharenapickedlist += comma + heartharenamapping[cardtierinfo.name.ToLower()];
+                heartharenapickedlist += comma + heartharenacardidmapping[cardid];
                 comma = "-";
             }
             if (heartharenapickedlist == "")
