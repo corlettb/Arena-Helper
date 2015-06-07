@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,6 +9,7 @@ using System.Windows.Controls;
 using System.IO;
 using System.Windows.Media.Imaging;
 using System.Reflection;
+using System.Net;
 using Hearthstone_Deck_Tracker;
 using Hearthstone_Deck_Tracker.Plugins;
 using Emgu.CV;
@@ -16,8 +18,10 @@ using Hearthstone_Deck_Tracker.Hearthstone;
 using System.Diagnostics;
 using System.Threading;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Runtime.InteropServices;
 using MahApps.Metro.Controls.Dialogs;
+using System.Text.RegularExpressions;
 
 namespace ArenaHelper
 {
@@ -186,6 +190,13 @@ namespace ArenaHelper
         private List<HeroHashData> herohashlist = new List<HeroHashData>();
         private List<CardTierInfo> cardtierlist = new List<CardTierInfo>();
 
+        private Hashtable heartharenaheromapping = new Hashtable();
+        private Hashtable heartharenamapping = new Hashtable();
+        private int hearthCallsMade = 0;
+        private string heartharenaurl = "";
+        private string heartharenamessage = "";
+        private HearthstoneTextBlock heartharenatiptext = null;
+
         private Bitmap fullcapture;
 
         // Left card dimensions
@@ -219,7 +230,7 @@ namespace ArenaHelper
 
         Stopwatch stopwatch;
 
-        protected MenuItem MainMenuItem { get; set; }
+        protected System.Windows.Controls.MenuItem MainMenuItem { get; set; }
         protected static ArenaWindow arenawindow;
 
         private const int ArenaDetectionTime = 750;
@@ -263,10 +274,10 @@ namespace ArenaHelper
 
         public Version Version
         {
-            get { return new Version("0.1.2"); }
+            get { return new Version("9.9.9"); }
         }
 
-        public MenuItem MenuItem
+        public System.Windows.Controls.MenuItem MenuItem
         {
             get { return MainMenuItem; }
         }
@@ -287,17 +298,28 @@ namespace ArenaHelper
             herohashlist.Add(new HeroHashData(7, "Mage", 15770007155810004267, "mage_small.png"));
             herohashlist.Add(new HeroHashData(8, "Priest", 15052908377040876499, "priest_small.png"));
 
+            heartharenaheromapping["druid"] = 1;
+            heartharenaheromapping["hunter"] = 2;
+            heartharenaheromapping["mage"] = 3;
+            heartharenaheromapping["paladin"] = 4;
+            heartharenaheromapping["priest"] = 5;
+            heartharenaheromapping["rogue"] = 6;
+            heartharenaheromapping["shaman"] = 7;
+            heartharenaheromapping["warlock"] = 8;
+            heartharenaheromapping["warrior"] = 9;
+
             AddMenuItem();
 
             stopwatch = Stopwatch.StartNew();
 
             //AddElements();
             LoadCards();
+            LoadHearthAreaCards();
         }
 
         private void AddMenuItem()
         {
-            MainMenuItem = new MenuItem()
+            MainMenuItem = new System.Windows.Controls.MenuItem()
             {
                 Header = "Arena Helper"
             };
@@ -331,6 +353,9 @@ namespace ArenaHelper
                 LoadConfig();
 
                 AddElements();
+
+ 
+
                 arenawindow.Closed += (sender, args) =>
                 {
                     RemoveElements();
@@ -692,6 +717,7 @@ namespace ArenaHelper
 
             if (newstate == PluginState.SearchArena)
             {
+                heartharenatiptext.Text = "";
                 SetDetectingText("Detecting arena...", DetectionWarning);
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Visible;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Hidden;
@@ -699,6 +725,7 @@ namespace ArenaHelper
             }
             else if (newstate == PluginState.SearchHeroes)
             {
+                heartharenatiptext.Text = "";
                 SetDetectingText("Detecting heroes...", DetectionWarning);
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Visible;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Hidden;
@@ -706,6 +733,7 @@ namespace ArenaHelper
             }
             else if (newstate == PluginState.SearchBigHero)
             {
+                heartharenatiptext.Text = "";
                 arenawindow.DetectedHeroesWarning.Text = "";
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Hidden;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Visible;
@@ -713,6 +741,7 @@ namespace ArenaHelper
             }
             else if (newstate == PluginState.DetectedHeroes)
             {
+                heartharenatiptext.Text = "";
                 arenawindow.DetectedHeroesWarning.Text = "";
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Hidden;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Visible;
@@ -720,6 +749,7 @@ namespace ArenaHelper
             }
             else if (newstate == PluginState.SearchCards)
             {
+                heartharenatiptext.Text = "";
                 ClearDetected();
                 SetDetectingText("Detecting cards...", DetectionWarning);
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Visible;
@@ -728,12 +758,14 @@ namespace ArenaHelper
             }
             else if (newstate == PluginState.DetectedCards)
             {
+                heartharenatiptext.Text = "HEARTHARENA:\n" + heartharenamessage;
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Hidden;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Hidden;
                 arenawindow.CardPanel.Visibility = System.Windows.Visibility.Visible;
             }
             else if (newstate == PluginState.Done)
             {
+                heartharenatiptext.Text = "";
                 SetDetectingText("Done", DoneMessage);
                 arenawindow.DetectingPanel.Visibility = System.Windows.Visibility.Visible;
                 arenawindow.HeroPanel.Visibility = System.Windows.Visibility.Hidden;
@@ -968,15 +1000,33 @@ namespace ArenaHelper
             {
                 // All cards detected
 
+                // Get points from heartharena
+
                 // Show the cards
                 arenawindow.Card0 = cardlist[detectedcards[0].index].card;
                 arenawindow.Card1 = cardlist[detectedcards[1].index].card;
                 arenawindow.Card2 = cardlist[detectedcards[2].index].card;
 
-                // Show the card value
-                arenawindow.Value0.Content = GetCardValue(cardlist[detectedcards[0].index].card.Id);
-                arenawindow.Value1.Content = GetCardValue(cardlist[detectedcards[1].index].card.Id);
-                arenawindow.Value2.Content = GetCardValue(cardlist[detectedcards[2].index].card.Id);
+                try
+                {
+                    JObject hearthData = getHearthAranaData();
+        
+                    arenawindow.Value0.Content = hearthData["results"][0]["card"]["score"];
+                    arenawindow.Value1.Content = hearthData["results"][1]["card"]["score"];
+                    arenawindow.Value2.Content = hearthData["results"][2]["card"]["score"];
+
+                    heartharenatiptext.Text = "HEARTHARENA:\n" + heartharenamessage;
+                }
+                catch (Exception e)
+                {
+                    // Fail back to just weightings if anything with HearthArena Fails.
+                    heartharenamessage = "Failed to talk to heartharena. Showing normal tier list.";
+                    arenawindow.Value0.Content = GetCardValue(cardlist[detectedcards[0].index].card.Id);
+                    arenawindow.Value1.Content = GetCardValue(cardlist[detectedcards[1].index].card.Id);
+                    arenawindow.Value2.Content = GetCardValue(cardlist[detectedcards[2].index].card.Id);
+
+                    heartharenatiptext.Text = "HEARTHARENA:\n" + heartharenamessage;
+                }
 
                 arenawindow.Update();
 
@@ -1004,8 +1054,10 @@ namespace ArenaHelper
 
         private void WaitCardPick(List<int> cardindices)
         {
+            testtext.Text += "\nheartharena url: " + heartharenaurl;
+            testtext.Text += "\nheartharena calls made: " + hearthCallsMade.ToString();
+            testtext.Text += "\nheartharena tip: " + heartharenamessage;
             // All cards detected, wait for new pick
-
             // Get the click position
             CheckMouse();
 
@@ -1076,6 +1128,53 @@ namespace ArenaHelper
                 // Clear the mouse data to avoid double detection of clicks
                 mouseindex.Clear();
             }
+        }
+
+        private string getHearthArenaUrl()
+        {
+            string heartharenapickedlist = "";
+            string comma = "";
+            foreach (var cardid in arenadata.pickedcards)
+            {
+                CardTierInfo cardtierinfo = GetCardTierInfo(cardid);
+                heartharenapickedlist += comma + heartharenamapping[cardtierinfo.name.ToLower()];
+                comma = "-";
+            }
+            if (heartharenapickedlist == "")
+            {
+                heartharenapickedlist = "-";
+            }
+
+            string detectedcardlist = "";
+            comma = "";
+            for (int i = 0; i < detectedcards.Count; i++)
+            {
+                detectedcardlist += comma + heartharenamapping[cardlist[detectedcards[i].index].card.Name.ToLower()];
+                comma = "-";
+            }
+
+            return "http://draft.heartharena.com/arena/option-multi-score/" + heartharenaheromapping[arenadata.pickedhero.ToLower()] + "/" + heartharenapickedlist + "/" + detectedcardlist;
+        }
+
+        private JObject getHearthAranaData()
+        {
+            string heartharenadatastr = "";
+            using (WebClient wc = new WebClient())
+            {
+                wc.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)");
+                heartharenaurl = getHearthArenaUrl();
+                heartharenadatastr = wc.DownloadString(heartharenaurl);
+                
+                hearthCallsMade++;
+            }
+
+            JObject heartharenadata = JObject.Parse(heartharenadatastr);
+
+            heartharenamessage = heartharenadata["tip"]["text"].ToString();
+            Regex rgx = new Regex("<[^>]+/?>");
+            heartharenamessage = rgx.Replace(heartharenamessage, "**");
+
+            return heartharenadata;
         }
 
         private CardInfo GetCard(string id)
@@ -1580,6 +1679,22 @@ namespace ArenaHelper
             cardtierlist = JsonConvert.DeserializeObject<List<CardTierInfo>>(File.ReadAllText(cardtierfile));
         }
 
+        private void LoadHearthAreaCards()
+        {
+            string assemblylocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
+            string heartharenafile = Path.Combine(assemblylocation, "data", "heartharena.json");
+            JObject json = JObject.Parse(File.ReadAllText(heartharenafile));
+
+            //Console.WriteLine(heartharenafile);
+
+            foreach (var item in json)
+            {
+                JToken value = item.Value;
+                heartharenamapping[value["name"].ToString().ToLower()] = value["id"];
+            }
+        }
+
         private Bitmap BitmapImage2Bitmap(BitmapImage bitmapImage)
         {
             using (MemoryStream outStream = new MemoryStream())
@@ -1639,6 +1754,24 @@ namespace ArenaHelper
                 }
             }
 
+            if (heartharenatiptext == null)
+            {
+                if (Helper.MainWindow.Overlay != null)
+                {
+                    // Add heartharea textarea
+                    heartharenatiptext = new HearthstoneTextBlock();
+                    heartharenatiptext.FontSize = 14;
+                    heartharenatiptext.Text = "";
+                    heartharenatiptext.TextWrapping = System.Windows.TextWrapping.Wrap;
+                    heartharenatiptext.Width = 350;
+                    Canvas.SetLeft(heartharenatiptext, 5);
+                    Canvas.SetTop(heartharenatiptext, 650);
+
+                    Canvas CanvasInfo = (Canvas)Helper.MainWindow.Overlay.FindName("CanvasInfo");
+                    CanvasInfo.Children.Add(heartharenatiptext);
+                }
+            }
+
             // Test images
             if (testimages.Count == 0)
             {
@@ -1663,6 +1796,17 @@ namespace ArenaHelper
 
         private void RemoveElements()
         {
+
+            if (heartharenatiptext != null)
+            {
+                if (Helper.MainWindow.Overlay != null)
+                {
+                    Canvas CanvasInfo = (Canvas)Helper.MainWindow.Overlay.FindName("CanvasInfo");
+                    CanvasInfo.Children.Remove(heartharenatiptext);
+                    heartharenatiptext = null;
+                }
+            }
+
             if (testtext != null)
             {
                 if (Helper.MainWindow.Overlay != null)
