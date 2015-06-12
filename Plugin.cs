@@ -125,6 +125,7 @@ namespace ArenaHelper
             public string deckname;
             public List<string> detectedheroes;
             public string pickedhero;
+            public string arenaguid;
             public List<Tuple<string, string, string>> detectedcards;
             public List<string> pickedcards;
 
@@ -538,6 +539,7 @@ namespace ArenaHelper
             Deck deck = new Deck();
             deck.Name = arenadata.deckname;
             deck.IsArenaDeck = true;
+            deck.DeckId = new System.Guid(arenadata.arenaguid);
 
             foreach (var cardid in arenadata.pickedcards)
             {
@@ -571,10 +573,12 @@ namespace ArenaHelper
             deck.Tags.Add("Arena");
 
             // Set the new deck
-            Helper.MainWindow.SetNewDeck(deck);
+            Helper.MainWindow.SetNewDeck(deck, true);
 
-            // Activate the window
-            Helper.MainWindow.ActivateWindow();
+            // Make the deck active
+            Helper.MainWindow.SaveDeck(true, SerializableVersion.Default, true);
+
+            Helper.MainWindow.SelectDeck(deck, true);
         }
 
         private void SaveArenaData()
@@ -622,6 +626,13 @@ namespace ArenaHelper
                         // Not all cards picked
                         SetState(PluginState.SearchCards);
                     }
+                    if (arenadata.arenaguid == null)
+                    {
+                        arenadata.arenaguid = Guid.NewGuid().ToString();
+                        SaveArenaData();
+                    }
+
+                    SaveDeck();
                 }
                 else
                 {
@@ -798,6 +809,7 @@ namespace ArenaHelper
             //Point advsize = GetHSSize(hsrect, cardrect.Width, cardrect.Height, scalewidth, scaleheight);
             Canvas.SetLeft(adviceoverlay, advpos.X);
             Canvas.SetTop(adviceoverlay, advpos.Y + 50);
+
         }
 
         // Check if there are plugin updates
@@ -1118,6 +1130,7 @@ namespace ArenaHelper
                 // The player picked a hero
                 arenadata.pickedhero = herohashlist[detectedbighero[0].index].name;
                 SaveArenaData();
+                arenadata.arenaguid = Guid.NewGuid().ToString();
 
                 UpdateHero();
 
@@ -1395,6 +1408,8 @@ namespace ArenaHelper
             }
 
             UpdateTitle();
+
+            SaveDeck();
         }
 
         public static Card GetCard(string id)
